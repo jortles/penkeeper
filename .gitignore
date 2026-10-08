@@ -1,0 +1,18 @@
+# Binaries
+penkeeper
+/server
+/pk
+*.exe
+
+# Logs
+*.log
+
+# Environment
+.env
+
+#IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store

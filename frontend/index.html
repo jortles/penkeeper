@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Penkeeper</title>
+  <!-- Inline theme init — runs before CSS to prevent flash -->
+  <script>
+    (function() {
+      var light = localStorage.getItem('theme') === 'light';
+      var h = document.documentElement;
+      h.style.colorScheme = light ? 'light' : 'dark';
+      h.style.background   = light ? '#f0f2f7' : '#282c34';
+      h.style.color        = light ? '#1a1d23' : '#abb2bf';
+      var fs = parseInt(localStorage.getItem('pk_font_size') || '13', 10);
+      h.style.zoom = fs / 13;
+    })();
+  </script>
+  <link rel="stylesheet" href="/static/style.css?v=61">
+  <link rel="stylesheet" href="/static/vendor/highlight-theme.min.css">
+</head>
+<body>
+
+  <!-- Top Navbar -->
+  <nav class="navbar">
+    <div class="navbar-brand" id="nav-home">
+      <span class="logo">&#9763;</span>
+      Penkeeper
+    </div>
+    <div class="navbar-right">
+      <button id="btn-search" class="nav-btn hidden">Search</button>
+      <button id="btn-commands" class="nav-btn hidden">Commands</button>
+      <button id="btn-users" class="nav-btn hidden">Users</button>
+      <div class="navbar-user">
+        <button id="user-menu-btn" class="nav-btn user-menu-btn hidden" aria-haspopup="true" aria-expanded="false">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span id="user-email" class="user-email"></span>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div id="user-dropdown" class="user-dropdown" style="display:none">
+          <button id="btn-settings" class="dropdown-item">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            Settings
+          </button>
+          <div class="dropdown-divider"></div>
+          <button id="btn-logout" class="dropdown-item dropdown-item-danger">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            Logout
+          </button>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- App layout: sidebar + content -->
+  <div class="app-container">
+    <aside id="sidebar" class="sidebar hidden"></aside>
+    <main id="app" class="content-area"></main>
+  </div>
+
+  <!-- Modal overlay -->
+  <div id="modal" class="hidden">
+    <div class="modal-content" id="modal-content"></div>
+  </div>
+
+  <script src="/static/vendor/highlight.min.js"></script>
+  <script src="/static/app.js?v=70"></script>
+</body>
+</html>
