@@ -25,12 +25,13 @@ A self-hosted, single-binary web application for managing penetration test asses
 
 <img width="668" height="244" alt="2026-10-22_14-53-10" src="https://github.com/user-attachments/assets/8e7a87d3-8649-42f6-a849-ea36fdfd3b83" />
 
-> Add screenshots here after first run. Suggested captures:
-> - Dashboard
-> - Assessment overview (host list + sidebar)
-> - Host detail (Ports tab, Commands tab)
-> - Commands library (global tab)
-> - Notes editor
+<img width="574" height="555" alt="2026-10-22_14-53-35" src="https://github.com/user-attachments/assets/43b2e3cb-dcd5-45a5-919a-e9432083b611" />
+
+<img width="1774" height="423" alt="2026-10-22_14-54-01" src="https://github.com/user-attachments/assets/7b11d5de-aafd-421e-9949-d727dfaf86ca" />
+
+<img width="1772" height="434" alt="2026-10-22_14-54-53" src="https://github.com/user-attachments/assets/eb6c2415-f0a5-4754-bfc2-f423131d1b62" />
+
+<img width="1776" height="401" alt="2026-10-22_14-59-16" src="https://github.com/user-attachments/assets/346e2f32-f20a-4a07-abe3-56657fd4151b" />
 
 ---
 
