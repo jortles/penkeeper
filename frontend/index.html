@@ -4,18 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Penkeeper</title>
-  <!-- Inline theme init — runs before CSS to prevent flash -->
-  <script>
-    (function() {
-      var light = localStorage.getItem('theme') === 'light';
-      var h = document.documentElement;
-      h.style.colorScheme = light ? 'light' : 'dark';
-      h.style.background   = light ? '#f0f2f7' : '#282c34';
-      h.style.color        = light ? '#1a1d23' : '#abb2bf';
-      var fs = parseInt(localStorage.getItem('pk_font_size') || '13', 10);
-      h.style.zoom = fs / 13;
-    })();
-  </script>
+  <!-- Theme init — runs before CSS to prevent flash. An external file: the
+       Content-Security-Policy (script-src 'self') blocks inline scripts. -->
+  <script src="/static/theme-init.js?v=1"></script>
   <link rel="stylesheet" href="/static/style.css?v=61">
   <link rel="stylesheet" href="/static/vendor/highlight-theme.min.css">
 </head>
@@ -64,6 +55,6 @@
   </div>
 
   <script src="/static/vendor/highlight.min.js"></script>
-  <script src="/static/app.js?v=70"></script>
+  <script src="/static/app.js?v=71"></script>
 </body>
 </html>

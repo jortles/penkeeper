@@ -134,7 +134,27 @@ const SAFE_TAGS = new Set([
 const SAFE_ATTRS = new Set([
   'href','target','rel','class','style','colspan','rowspan','title','color',
 ]);
-const DANGEROUS_STYLE_RE = /expression\s*\(|url\s*\(|javascript:|@import/i;
+// Inline styles are rebuilt from an allowlist of properties (what the editor
+// itself produces: highlight colours, bold/italic, alignment) with values
+// limited to names, numbers, hex colours and rgb()/hsl(); so no url(),
+// expression(), position or other property can get in through imported
+// bundles or hand-written HTML.
+const SAFE_STYLE_PROPS = new Set([
+  'color','background-color','background','font-weight','font-style','font-size',
+  'font-family','text-decoration','text-decoration-line','text-align','white-space',
+]);
+const SAFE_STYLE_VALUE_RE = /^(?:[a-z0-9#%.,\s-]|(?:rgba?|hsla?)\([0-9\s.,%]*\))+$/i;
+function sanitizeStyle(style) {
+  const kept = [];
+  for (const decl of String(style).split(';')) {
+    const i = decl.indexOf(':');
+    if (i < 0) continue;
+    const prop = decl.slice(0, i).trim().toLowerCase();
+    const val = decl.slice(i + 1).trim();
+    if (SAFE_STYLE_PROPS.has(prop) && val && SAFE_STYLE_VALUE_RE.test(val)) kept.push(`${prop}: ${val}`);
+  }
+  return kept.join('; ');
+}
 function sanitizeHTML(html) {
   if (!html) return '';
   const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -162,8 +182,10 @@ function sanitizeHTML(html) {
             if (val.startsWith('javascript:') || val.startsWith('vbscript:') || val.startsWith('data:')) {
               child.removeAttribute(attr.name);
             }
-          } else if (name === 'style' && DANGEROUS_STYLE_RE.test(attr.value)) {
-            child.removeAttribute(attr.name);
+          } else if (name === 'style') {
+            const clean = sanitizeStyle(attr.value);
+            if (clean) child.setAttribute('style', clean);
+            else child.removeAttribute(attr.name);
           }
         }
         walk(child);
@@ -1889,7 +1911,7 @@ function showBulkNmapModal(eid) {
       const res = await fetch(`${API_BASE}/assessments/${eid}/nmap`, {
         method: 'POST', headers: authHeaders(), credentials: 'same-origin', body: fd,
       });
-      if (res.status === 401) { logout(); throw new Error('Session expired'); }
+      if (res.status === 401) { sessionExpired(); throw new Error('Session expired'); }
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error || `Upload failed (${res.status})`);
@@ -1982,6 +2004,10 @@ function renderHostDetail(host) {
   const creds   = host.creds        || host.Creds        || [];
   const notes   = host.notes        || host.Notes        || [];
   const outputs = host.tool_outputs || host.ToolOutputs  || [];
+  // The assessment payload lists tool outputs without their text (which can
+  // be megabytes); loadToolOutputs fetches the full entries for the Services
+  // tab and marks the host.
+  const outputsLoaded = !!host.tool_outputs_loaded;
   const eid        = currentAssessment.id || currentAssessment.ID;
   const compromised = host.compromised || host.Compromised || false;
 
@@ -2182,7 +2208,7 @@ function renderHostDetail(host) {
               <td><button class="btn-icon tool-del-btn" data-oid="${oid}" data-hid="${hid}" title="Delete">&#10005;</button></td>
             </tr>
             <tr class="tool-output-detail hidden" data-oid="${oid}">
-              <td colspan="4"><pre class="tool-output-pre">${ansiToHtml(o.output ?? o.Output ?? '')}</pre></td>
+              <td colspan="4"><pre class="tool-output-pre">${outputsLoaded ? ansiToHtml(o.output ?? o.Output ?? '') : '<em>Loading…</em>'}</pre></td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -2201,11 +2227,7 @@ function renderHostDetail(host) {
       // Services tab always re-fetches directly so externally piped data appears immediately.
       if (activeHostTab === 'services') {
         try {
-          const outputs = await apiGet(`/hosts/${hid}/outputs`);
-          const hosts = currentAssessment.hosts || currentAssessment.Hosts || [];
-          const h = hosts.find(x => (x.id || x.ID) === hid);
-          if (h) h.tool_outputs = outputs;
-          renderHostDetail(h || { id: hid, tool_outputs: outputs });
+          renderHostDetail(await loadToolOutputs(hid));
         } catch (_) { /* ignore, stale data is fine */ }
       }
       // Commands tab fetches host-scoped commands.
@@ -2273,14 +2295,24 @@ function renderHostDetail(host) {
   if (refreshServicesBtn) {
     refreshServicesBtn.addEventListener('click', async () => {
       try {
-        const outputs = await apiGet(`/hosts/${hid}/outputs`);
-        const hosts = currentAssessment.hosts || currentAssessment.Hosts || [];
-        const h = hosts.find(x => (x.id || x.ID) === hid);
-        if (h) h.tool_outputs = outputs;
+        const h = await loadToolOutputs(hid);
         activeHostTab = 'services';
-        renderHostDetail(h || { id: hid, tool_outputs: outputs });
+        renderHostDetail(h);
       } catch (e) { alert(e.message); }
     });
+  }
+  // Shown with the Services tab open (e.g. re-rendered after a refresh)
+  // before the outputs' text was fetched: fetch it and fill it in, without
+  // re-rendering the view (the list itself was just loaded).
+  if (activeHostTab === 'services' && !outputsLoaded && outputs.length) {
+    loadToolOutputs(hid).then(h => {
+      if (currentHostId !== hid || !servicesPanel || !servicesPanel.isConnected) return;
+      const byId = new Map((h.tool_outputs || []).map(o => [String(o.id ?? o.ID), o]));
+      servicesPanel.querySelectorAll('.tool-output-detail').forEach(row => {
+        const o = byId.get(row.dataset.oid);
+        if (o) row.querySelector('pre').innerHTML = ansiToHtml(o.output ?? o.Output ?? '');
+      });
+    }).catch(() => { /* the rows stay, with "Loading…" where the text would be */ });
   }
   $('#hd-delete-host').addEventListener('click', async () => {
     if (!confirm('Delete this host and all its data?')) return;
@@ -2322,6 +2354,18 @@ function renderHostDetail(host) {
   // Notes
   $('#notes-new-file').addEventListener('click', () => createNoteFile(hid));
   initNotesEditor(hid);
+}
+
+// Fetch a host's tool outputs with their text (the assessment payload lists
+// them without it), store them on the host in the cached assessment, and
+// return that host (or a stub when it is not in the cache any more).
+async function loadToolOutputs(hid) {
+  const outputs = await apiGet(`/hosts/${hid}/outputs`);
+  const hosts = (currentAssessment && (currentAssessment.hosts || currentAssessment.Hosts)) || [];
+  const h = hosts.find(x => (x.id || x.ID) === hid) || { id: hid };
+  h.tool_outputs = outputs;
+  h.tool_outputs_loaded = true;
+  return h;
 }
 
 /* ==========================================================
@@ -4296,7 +4340,7 @@ function showNmapImportModal(hid) {
       const res = await fetch(`${API_BASE}/hosts/${hid}/nmap`, {
         method: 'POST', headers: authHeaders(), credentials: 'same-origin', body: fd,
       });
-      if (res.status === 401) { logout(); throw new Error('Session expired'); }
+      if (res.status === 401) { sessionExpired(); throw new Error('Session expired'); }
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error || `Upload failed (${res.status})`);

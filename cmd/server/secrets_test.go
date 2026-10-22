@@ -84,3 +84,12 @@ func TestCheckSecrets(t *testing.T) {
 		t.Fatalf("PK_ALLOW_INSECURE_SECRETS=1: refusal %q, %d warnings", r, len(w))
 	}
 }
+
+// Port 465 is SMTPS (TLS from the first byte); 587 and 25 use STARTTLS.
+func TestSMTPImplicitTLS(t *testing.T) {
+	for port, want := range map[string]bool{"465": true, " 465 ": true, "587": false, "25": false, "": false} {
+		if got := smtpImplicitTLS(port); got != want {
+			t.Errorf("smtpImplicitTLS(%q) = %v, want %v", port, got, want)
+		}
+	}
+}

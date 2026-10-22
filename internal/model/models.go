@@ -112,7 +112,7 @@ type Credential struct {
 	HostID    uuid.UUID `gorm:"type:uuid;index" json:"host_id"`
 	Username  string    `json:"username"`
 	Password  string    `json:"password"` // AES-256-GCM encrypted at rest
-	Hash      string    `json:"hash"`     // e.g. NTLM hash, bcrypt, etc. (stored plaintext)
+	Hash      string    `json:"hash"`     // e.g. NTLM hash, bcrypt, etc.; AES-256-GCM encrypted at rest
 	Source    string    `json:"source"`   // e.g. "manual", "nmap", "import"
 	CreatedAt time.Time `json:"created_at"`
 }

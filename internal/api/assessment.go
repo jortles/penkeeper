@@ -146,7 +146,12 @@ func GetAssessment(db *storage.DB) gin.HandlerFunc {
 			Preload("Hosts.Notes", func(tx *gorm.DB) *gorm.DB {
 				return tx.Order("sort_order ASC, created_at ASC")
 			}).
-			Preload("Hosts.ToolOutputs").
+			// Tool output without its text, which can be megabytes per entry
+			// and is fetched by GET /hosts/:hid/outputs when the Services tab
+			// shows it. The listing only needs the tool, command and time.
+			Preload("Hosts.ToolOutputs", func(tx *gorm.DB) *gorm.DB {
+				return tx.Select("id", "host_id", "tool", "command", "created_at").Order("created_at DESC")
+			}).
 			First(&eng, "id = ? AND owner_id = ?", engID, userID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				c.JSON(http.StatusNotFound, gin.H{"error": "assessment not found"})
@@ -184,8 +189,21 @@ func DeleteAssessment(db *storage.DB) gin.HandlerFunc {
 			return
 		}
 
-		if err := db.Delete(&model.Assessment{}, "id = ?", engID).Error; err != nil {
-			log.Printf("DeleteAssessment DB error: %v", err)
+		// Hosts and their ports, credentials, notes and tool output go with
+		// the assessment (ON DELETE CASCADE). The hosts' logged commands and
+		// the activity log have no such constraint and are deleted here.
+		txErr := db.Transaction(func(tx *gorm.DB) error {
+			hostIDs := tx.Model(&model.Host{}).Select("id").Where("assessment_id = ?", engID)
+			if err := tx.Where("host_id IN (?)", hostIDs).Delete(&model.Command{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("assessment_id = ?", engID).Delete(&model.ActivityLog{}).Error; err != nil {
+				return err
+			}
+			return tx.Delete(&model.Assessment{}, "id = ?", engID).Error
+		})
+		if txErr != nil {
+			log.Printf("DeleteAssessment DB error: %v", txErr)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete assessment"})
 			return
 		}

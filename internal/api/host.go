@@ -1269,8 +1269,17 @@ func DeleteHost(db *storage.DB) gin.HandlerFunc {
 			return
 		}
 
-		if err := db.Delete(&model.Host{}, "id = ?", hid).Error; err != nil {
-			log.Printf("DeleteHost DB error: %v", err)
+		// Ports, credentials, notes and tool output go with the host (ON
+		// DELETE CASCADE); its logged commands have no such constraint and
+		// are deleted here, or they would linger in the Commands library.
+		txErr := db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Where("host_id = ?", hid).Delete(&model.Command{}).Error; err != nil {
+				return err
+			}
+			return tx.Delete(&model.Host{}, "id = ?", hid).Error
+		})
+		if txErr != nil {
+			log.Printf("DeleteHost DB error: %v", txErr)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete host"})
 			return
 		}

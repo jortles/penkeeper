@@ -52,7 +52,7 @@ func ForgotPassword(db *storage.DB, emailCfg email.Config, appURL string) gin.Ha
 
 		// Look up user — bail silently if not found
 		var user model.User
-		if err := db.Where("email = ?", req.Email).First(&user).Error; err != nil {
+		if err := db.Where("LOWER(email) = ?", normalizeEmail(req.Email)).First(&user).Error; err != nil {
 			c.JSON(http.StatusOK, successMsg)
 			return
 		}

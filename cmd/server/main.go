@@ -2,13 +2,16 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	assets "penkeeper"
@@ -170,6 +173,14 @@ func main() {
 		}
 	}
 
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "1338"
+	}
+	// The URL users open: password-reset links, the cross-site request
+	// check and the cookie Secure flag all depend on it.
+	appURL := coalesce(os.Getenv("APP_URL"), "http://localhost:"+port)
+
 	// ------------------------------------------------------------
 	// Gin router
 	// ------------------------------------------------------------
@@ -206,6 +217,9 @@ func main() {
 	r.Use(middleware.CORSMiddleware())
 	r.Use(middleware.Logger())
 	r.Use(middleware.CSRFProtect(os.Getenv("APP_URL")))
+	// Session cookies are marked Secure on TLS, behind a trusted TLS proxy,
+	// or when APP_URL is https.
+	r.Use(middleware.SecureCookies(appURL))
 	// Cap request bodies before any handler reads them. Routes not listed
 	// here (plain JSON) get 1 MB.
 	const largeText = 20 << 20 // notes, scratch pad
@@ -227,18 +241,15 @@ func main() {
 	// ------------------------------------------------------------
 	// SMTP / email config for password reset
 	// ------------------------------------------------------------
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "1338"
-	}
+	smtpPort := coalesce(os.Getenv("SMTP_PORT"), "587")
 	emailCfg := email.Config{
 		Host:     os.Getenv("SMTP_HOST"),
-		Port:     coalesce(os.Getenv("SMTP_PORT"), "587"),
+		Port:     smtpPort,
 		User:     os.Getenv("SMTP_USER"),
 		Password: os.Getenv("SMTP_PASS"),
 		From:     coalesce(os.Getenv("SMTP_FROM"), os.Getenv("SMTP_USER")),
+		UseTLS:   smtpImplicitTLS(smtpPort), // 465: TLS from the first byte, not STARTTLS
 	}
-	appURL := coalesce(os.Getenv("APP_URL"), "http://localhost:"+port)
 
 	// ------------------------------------------------------------
 	// Auth routes (no JWT required)
@@ -377,9 +388,30 @@ func main() {
 		IdleTimeout:       2 * time.Minute,
 	}
 	log.Printf("Server listening on %s", addr)
-	if err := srv.ListenAndServe(); err != nil {
-		log.Fatalf("server error: %v", err)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("server error: %v", err)
+		}
+	}()
+
+	// On SIGINT/SIGTERM (Ctrl-C, systemctl stop) stop accepting connections
+	// and let requests in flight (an import, a large export) finish, within
+	// the limit systemd gives a service to stop (90 s by default).
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	sig := <-quit
+	log.Printf("%v received, shutting down (waiting for requests in flight)", sig)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("shutdown: %v", err)
 	}
+}
+
+// smtpImplicitTLS reports whether SMTP on port is TLS from the first byte
+// (SMTPS, port 465) rather than plain SMTP upgraded with STARTTLS (587, 25).
+func smtpImplicitTLS(port string) bool {
+	return strings.TrimSpace(port) == "465"
 }
 
 // loadDotEnv reads a simple KEY=VALUE .env file and sets any variables that
@@ -446,7 +478,9 @@ func createFirstAdmin(db *storage.DB) error {
 	// --- Email ---
 	fmt.Print("  Email: ")
 	emailInput, _ := reader.ReadString('\n')
-	emailInput = strings.TrimSpace(emailInput)
+	// Stored lower-cased: sign-in and password reset compare addresses
+	// ignoring case.
+	emailInput = strings.ToLower(strings.TrimSpace(emailInput))
 	if !strings.Contains(emailInput, "@") || !strings.Contains(emailInput, ".") {
 		return fmt.Errorf("invalid email address: %q", emailInput)
 	}

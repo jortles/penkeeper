@@ -6,6 +6,29 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// SecureCookiesKey is the gin context key under which SecureCookies records
+// whether session cookies set on this request must carry the Secure flag.
+const SecureCookiesKey = "secure_cookies"
+
+// SecureCookies decides, for every request, whether session cookies must be
+// marked Secure: when the connection itself is TLS, when the app is reached
+// through an https APP_URL, or when a proxy gin trusts (TRUSTED_PROXIES)
+// says it terminated TLS (X-Forwarded-Proto). The header is never taken from
+// an untrusted peer: anyone could send it and get a cookie the browser then
+// withholds on plain HTTP.
+func SecureCookies(appURL string) gin.HandlerFunc {
+	viaHTTPS := strings.HasPrefix(strings.ToLower(strings.TrimSpace(appURL)), "https://")
+	return func(c *gin.Context) {
+		secure := viaHTTPS || c.Request.TLS != nil
+		if !secure {
+			proto, _, _ := strings.Cut(c.GetHeader("X-Forwarded-Proto"), ",")
+			secure = strings.EqualFold(strings.TrimSpace(proto), "https") && fromTrustedProxy(c)
+		}
+		c.Set(SecureCookiesKey, secure)
+		c.Next()
+	}
+}
+
 // SecurityHeaders adds standard security headers to every response.
 func SecurityHeaders() gin.HandlerFunc {
 	return func(c *gin.Context) {

@@ -96,3 +96,38 @@ func TestPresentedToken(t *testing.T) {
 		}
 	}
 }
+
+// A browser (Origin, or Fetch Metadata) gets the session in the cookie only;
+// a non-browser client such as pk gets the token in the body.
+func TestSessionResponseBrowserGetsNoToken(t *testing.T) {
+	cases := []struct {
+		name  string
+		hdr   map[string]string
+		token bool
+	}{
+		{"pk / curl", nil, true},
+		{"browser with Origin", map[string]string{"Origin": "http://app:1338"}, false},
+		{"browser with Fetch Metadata only", map[string]string{"Sec-Fetch-Site": "same-origin"}, false},
+	}
+	for _, tc := range cases {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "http://app:1338/api/auth/login", nil)
+		for k, v := range tc.hdr {
+			c.Request.Header.Set(k, v)
+		}
+		body := sessionResponse(c, "tok")
+		if _, has := body["token"]; has != tc.token {
+			t.Errorf("%s: token in body = %v, want %v", tc.name, has, tc.token)
+		}
+		if ok, _ := body["ok"].(bool); !ok {
+			t.Errorf("%s: ok missing", tc.name)
+		}
+	}
+}
+
+func TestNormalizeEmail(t *testing.T) {
+	if got := normalizeEmail("  User@Example.COM "); got != "user@example.com" {
+		t.Errorf("normalizeEmail = %q", got)
+	}
+}

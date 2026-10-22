@@ -14,6 +14,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm/clause"
 
+	"penkeeper/internal/middleware"
 	"penkeeper/internal/model"
 	"penkeeper/internal/storage"
 )
@@ -27,10 +28,17 @@ const cookieMaxAge = 86400 // 24 hours
 // exists (bcrypt cost 10, of the string "invalid").
 const dummyBcryptHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
 
+// cookiesSecure reports whether session cookies set on this request must
+// carry the Secure flag, as decided by middleware.SecureCookies (TLS, an
+// https APP_URL, or X-Forwarded-Proto from a trusted proxy).
+func cookiesSecure(c *gin.Context) bool {
+	return c.GetBool(middleware.SecureCookiesKey)
+}
+
 // setAuthCookies writes an HttpOnly session cookie (holding the JWT) and
 // a non-HttpOnly flag cookie so JavaScript can check login state.
 func setAuthCookies(c *gin.Context, token string) {
-	secure := c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https"
+	secure := cookiesSecure(c)
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(cookieName, token, cookieMaxAge, "/", "", secure, true) // HttpOnly
 	c.SetCookie(cookieFlag, "1", cookieMaxAge, "/", "", secure, false)  // readable by JS
@@ -38,10 +46,34 @@ func setAuthCookies(c *gin.Context, token string) {
 
 // clearAuthCookies removes both session cookies.
 func clearAuthCookies(c *gin.Context) {
-	secure := c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https"
+	secure := cookiesSecure(c)
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(cookieName, "", -1, "/", "", secure, true)
 	c.SetCookie(cookieFlag, "", -1, "/", "", secure, false)
+}
+
+// browserClient reports whether the request comes from a browser. Browsers
+// always send Origin on a POST, and the ones with Fetch Metadata also
+// Sec-Fetch-Site; the pk CLI (and curl) send neither.
+func browserClient(c *gin.Context) bool {
+	return c.GetHeader("Origin") != "" || c.GetHeader("Sec-Fetch-Site") != ""
+}
+
+// sessionResponse is the body of a successful login. A browser gets the
+// session in the HttpOnly cookie only: handing the token to page scripts as
+// well would make that protection pointless. A non-browser client (the pk
+// CLI) has no cookie jar and gets the token to send as a Bearer token.
+func sessionResponse(c *gin.Context, token string) gin.H {
+	if browserClient(c) {
+		return gin.H{"ok": true}
+	}
+	return gin.H{"ok": true, "token": token}
+}
+
+// normalizeEmail returns the form an email address is compared in: trimmed
+// and lower-cased, so User@Example.com and user@example.com are one account.
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
 }
 
 // MigrateAuth creates the auth tables that storage.NewPostgres does not
@@ -242,7 +274,7 @@ func Login(db *storage.DB, jwtSecret string) gin.HandlerFunc {
 		}
 
 		var user model.User
-		if err := db.Where("email = ?", req.Email).First(&user).Error; err != nil {
+		if err := db.Where("LOWER(email) = ?", normalizeEmail(req.Email)).First(&user).Error; err != nil {
 			// Run a dummy compare so the response time matches the found-user
 			// path, preventing account enumeration by timing.
 			_ = bcrypt.CompareHashAndPassword([]byte(dummyBcryptHash), []byte(req.Password))
@@ -276,7 +308,7 @@ func Login(db *storage.DB, jwtSecret string) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"token": tokenStr})
+		c.JSON(http.StatusOK, sessionResponse(c, tokenStr))
 	}
 }
 
@@ -353,6 +385,6 @@ func TOTPLogin(db *storage.DB, jwtSecret string) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"token": tokenStr})
+		c.JSON(http.StatusOK, sessionResponse(c, tokenStr))
 	}
 }

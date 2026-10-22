@@ -163,7 +163,7 @@ sudo systemctl enable --now penkeeper
 | `SMTP_USER` | *(unset)* | SMTP username |
 | `SMTP_PASS` | *(unset)* | SMTP password |
 | `SMTP_FROM` | *(= SMTP_USER)* | From address for reset emails |
-| `APP_URL` | `http://localhost:PORT` | Public URL used in password reset links. Its origin is also accepted by the cross-site request check, so set it when users reach the app through a reverse proxy. |
+| `APP_URL` | `http://localhost:PORT` | Public URL used in password reset links. Its origin is also accepted by the cross-site request check, so set it when users reach the app through a reverse proxy. When it is `https://…`, session cookies are marked `Secure` (they also are on a TLS connection, or when a proxy in `TRUSTED_PROXIES` sends `X-Forwarded-Proto: https`). |
 | `PK_ALLOW_INSECURE_SECRETS` | *(unset)* | `1` starts the server despite insecure secrets, with a warning (local development only). `ENCRYPTION_KEY` allows only a weak `ENCRYPTION_KEY`, for data already encrypted under one (see below). |
 
 A variable exported in your shell overrides `.env`.
@@ -435,6 +435,7 @@ penkeeper/
 - The application is intended for **local or VPN-restricted use** during an engagement. If you expose it to the internet, put it behind a reverse proxy (nginx/Caddy) with TLS. Behind a proxy, set `APP_URL` to the public URL users open; otherwise, unless the proxy is in `TRUSTED_PROXIES` and sends `X-Forwarded-Proto` and `X-Forwarded-Host`, browsers that send no `Sec-Fetch-Site` header (plain HTTP on a non-localhost address, older Safari) may have state-changing requests rejected as cross-site.
 - **Give the app its own hostname.** Browsers send cookies to every port of a host, so the session cookie also reaches any other web service on the same hostname (for example a target app you port-forward to `localhost:8080` while using Penkeeper on `localhost:1338`), and a page there can plant cookies for this app. Serve Penkeeper on a dedicated hostname that no other service shares (e.g. a `penkeeper.internal` entry in DNS or `/etc/hosts`; on Linux a spare loopback address such as `127.0.0.2` also works).
 - State-changing API requests from a browser must come from the app's own origin, `APP_URL`, `ALLOWED_ORIGINS` or the forwarded origin from a trusted proxy; others get `403`. The `pk` CLI (Bearer token) is unaffected. Scripts that authenticate with the session cookie must send a matching `Origin` header, or use a Bearer token instead.
+- A login from a browser (a request with an `Origin` or `Sec-Fetch-Site` header) gets the session only as the HttpOnly cookie; page scripts never see the token. A login without those headers (`pk login`, curl) gets `{"token": …}` in the body to send as `Authorization: Bearer`.
 - Request bodies are capped (1 MB by default; 20 MB for tool output, notes and the scratch pad; 50 MB for imports; 10 MB for Nmap files) and larger ones get `413`. At most two imports run at once. Slow or idle connections are closed by server timeouts.
 - API responses are sent with `Cache-Control: no-store`, so decrypted credentials and exports are not kept in the browser's disk cache.
 - Credentials stored in the database are encrypted at rest, but the encryption key is derived from environment variables — protect your `.env` file (`setup.sh` writes it with mode `600`).

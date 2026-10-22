@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"crypto/tls"
 	"io"
 	"log"
 	"net/http"
@@ -321,5 +322,77 @@ func TestFromTrustedProxyProbePeer(t *testing.T) {
 	r.ServeHTTP(httptest.NewRecorder(), req)
 	if got {
 		t.Error("peer 192.0.2.1 with no trusted proxies counted as a trusted proxy")
+	}
+}
+
+// A cross-origin deployment (ALLOWED_ORIGINS) must preflight every method
+// and request header the SPA uses: PATCH (compromised toggle) and
+// X-Bundle-Passphrase (encrypted export/import).
+func TestCORSPreflightCoversSPARequests(t *testing.T) {
+	t.Setenv("ALLOWED_ORIGINS", "https://ui.example.com")
+	r := gin.New()
+	r.Use(CORSMiddleware())
+	req := httptest.NewRequest(http.MethodOptions, "http://app:1338/api/v1/hosts/x/compromised", nil)
+	req.Header.Set("Origin", "https://ui.example.com")
+	req.Header.Set("Access-Control-Request-Method", "PATCH")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("preflight status %d", w.Code)
+	}
+	for hdr, want := range map[string]string{
+		"Access-Control-Allow-Methods": "PATCH",
+		"Access-Control-Allow-Headers": "X-Bundle-Passphrase",
+		"Access-Control-Allow-Origin":  "https://ui.example.com",
+	} {
+		if got := w.Header().Get(hdr); !strings.Contains(got, want) {
+			t.Errorf("%s = %q, want it to contain %q", hdr, got, want)
+		}
+	}
+}
+
+// Session cookies are Secure on TLS, with an https APP_URL, or when a trusted
+// proxy forwards https; a client's own X-Forwarded-Proto counts for nothing.
+func TestSecureCookies(t *testing.T) {
+	flag := func(appURL string, trusted []string, hdr string, peer string, viaTLS bool) bool {
+		r := gin.New()
+		if err := r.SetTrustedProxies(trusted); err != nil {
+			t.Fatal(err)
+		}
+		r.Use(SecureCookies(appURL))
+		var got bool
+		r.POST("/api/auth/login", func(c *gin.Context) { got = c.GetBool(SecureCookiesKey); c.Status(204) })
+		req := httptest.NewRequest(http.MethodPost, "http://app:1338/api/auth/login", nil)
+		req.RemoteAddr = peer
+		if hdr != "" {
+			req.Header.Set("X-Forwarded-Proto", hdr)
+		}
+		if viaTLS {
+			req.TLS = &tls.ConnectionState{}
+		}
+		r.ServeHTTP(httptest.NewRecorder(), req)
+		return got
+	}
+	cases := []struct {
+		name    string
+		appURL  string
+		trusted []string
+		hdr     string
+		peer    string
+		tls     bool
+		want    bool
+	}{
+		{"plain http", "http://localhost:1338", nil, "", "10.0.0.9:1", false, false},
+		{"tls connection", "http://localhost:1338", nil, "", "10.0.0.9:1", true, true},
+		{"https APP_URL", "https://pk.example.com", nil, "", "10.0.0.9:1", false, true},
+		{"forwarded https from untrusted peer", "http://localhost:1338", nil, "https", "10.0.0.9:1", false, false},
+		{"forwarded https from trusted proxy", "http://localhost:1338", []string{"10.0.0.9"}, "https", "10.0.0.9:1", false, true},
+		{"forwarded http from trusted proxy", "http://localhost:1338", []string{"10.0.0.9"}, "http", "10.0.0.9:1", false, false},
+		{"forwarded https from another peer", "http://localhost:1338", []string{"10.0.0.9"}, "https", "10.0.0.7:1", false, false},
+	}
+	for _, tc := range cases {
+		if got := flag(tc.appURL, tc.trusted, tc.hdr, tc.peer, tc.tls); got != tc.want {
+			t.Errorf("%s: secure = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }

@@ -44,8 +44,11 @@ func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if c.Request.Method == http.MethodOptions {
 			if len(allowedSet) > 0 && setCORSHeaders(c) {
-				c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-				c.Writer.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept")
+				// Every method and request header the SPA uses: PATCH toggles a
+				// host's compromised flag, X-Bundle-Passphrase carries the
+				// passphrase of an encrypted export or import.
+				c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+				c.Writer.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept, X-Bundle-Passphrase")
 				c.Writer.Header().Set("Access-Control-Max-Age", "86400")
 			}
 			c.AbortWithStatus(http.StatusNoContent)

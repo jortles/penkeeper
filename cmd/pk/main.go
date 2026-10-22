@@ -287,10 +287,22 @@ func runCapture(shellCmd string) (output string, status int, err error) {
 	}
 	defer ptmx.Close()
 
-	// Mirror the current terminal size into the PTY.
-	if cols, rows, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
-		_ = pty.Setsize(ptmx, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})
+	// Mirror the terminal size into the PTY, now and whenever the terminal
+	// is resized, so a pager or editor run under pk lays itself out right.
+	resize := func() {
+		if cols, rows, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
+			_ = pty.Setsize(ptmx, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})
+		}
 	}
+	resize()
+	winch := make(chan os.Signal, 1)
+	signal.Notify(winch, syscall.SIGWINCH)
+	defer func() { signal.Stop(winch); close(winch) }()
+	go func() {
+		for range winch {
+			resize()
+		}
+	}()
 
 	// Raw mode so every keystroke (including password input) is forwarded as-is.
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
@@ -338,8 +350,6 @@ func (l *lockedBuf) Write(p []byte) (int, error) {
 	return l.b.Write(p)
 }
 
-// exitStatus turns the error from cmd.Wait into the exit status a shell
-// would report: the command's own code, or 128+N when signal N killed it.
 // sameID reports whether a and b are the same UUID, ignoring the spellings
 // the server accepts too (letter case, braces, a urn:uuid: prefix, no dashes).
 func sameID(a, b string) bool {
@@ -351,6 +361,8 @@ func sameID(a, b string) bool {
 	return b != "" && norm(a) == norm(b)
 }
 
+// exitStatus turns the error from cmd.Wait into the exit status a shell
+// would report: the command's own code, or 128+N when signal N killed it.
 func exitStatus(err error) int {
 	var ee *exec.ExitError
 	if err == nil {
