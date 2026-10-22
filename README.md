@@ -160,7 +160,7 @@ sudo systemctl enable --now penkeeper
 | `PORT` | `1338` | HTTP listen port |
 | `ENCRYPTION_KEY` | *(derived from `JWT_SECRET`)* | Secret used to encrypt credentials & TOTP secrets at rest. Set explicitly — see [Encryption key](#encryption-key) below. |
 | `ALLOWED_ORIGINS` | *(unset)* | Comma-separated CORS origins for cross-origin deployments. These origins also pass the cross-site request check. |
-| `TRUSTED_PROXIES` | *(unset)* | Comma-separated proxy IPs/CIDRs to trust for `X-Forwarded-For`. Leave unset when running directly; set it to your reverse proxy only when behind one. If unset, no proxy headers are trusted (so the rate limiter keys on the real connection IP). From these proxies, the origin in `X-Forwarded-Proto` and `X-Forwarded-Host` also passes the cross-site request check. |
+| `TRUSTED_PROXIES` | *(unset)* | Comma-separated proxy IPs/CIDRs to trust for `X-Forwarded-For`. Leave unset when running directly; set it to your reverse proxy only when behind one. If unset, no proxy headers are trusted (so the rate limiter keys on the real connection IP). From these proxies, the origin in `X-Forwarded-Proto` and `X-Forwarded-Host` also passes the cross-site request check, and `X-Forwarded-Proto: https` marks session cookies `Secure`. |
 | `SMTP_HOST` | *(unset)* | SMTP server for password reset emails. If unset, reset URLs are logged to stdout. |
 | `SMTP_PORT` | `587` | `587` = STARTTLS, `465` = implicit TLS |
 | `SMTP_USER` | *(unset)* | SMTP username |
@@ -414,8 +414,10 @@ penkeeper/
 │   └── pk/             # CLI pipe tool
 ├── frontend/
 │   ├── index.html      # SPA shell
+│   ├── theme-init.js   # Applies the saved theme/font size before first paint (external: the CSP allows no inline scripts)
 │   ├── app.js          # All frontend logic (vanilla JS)
-│   └── style.css       # Styles
+│   ├── style.css       # Styles
+│   └── vendor/         # highlight.js (code blocks in notes)
 ├── internal/
 │   ├── api/            # Gin route handlers
 │   ├── crypto/         # AES-GCM encryption helpers
